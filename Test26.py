@@ -127,8 +127,11 @@ class Wire(QGraphicsLineItem):
         try:
             if self.out_port and self in self.out_port.wires:
                 self.out_port.wires.remove(self)
-            if self.in_port and self in self.in_port.wires:
-                self.in_port.wires.remove(self)
+            if self.in_port:
+                if self in self.in_port.wires:
+                    self.in_port.wires.remove(self)
+                if not self.in_port.wires:
+                    self.in_port.set_state(False)
             if self.scene():
                 self.scene().removeItem(self)
         except (RuntimeError, AttributeError):
@@ -308,61 +311,97 @@ class InputSwitch(ShapeNode):
 
 class ClockSource(ShapeNode):
     def __init__(self, x, y):
-        super().__init__(x, y, 80, 70, "CLOCK", QColor(100, 80, 60))
+        super().__init__(x, y, 80, 90, "CLOCK", QColor(100, 80, 60))
         self.state = False
-        self.counter = 0
-        self.frequency = 20
-        self.out = Port(self, 74, 35, True, "OUT")
+        self.enabled = False
+        self.interval_ms = 10  # Интервал в миллисекундах (по умолчанию 10 мс)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.toggle_clock)
+        self.out = Port(self, 74, 45, True, "OUT")
         self.add_port(self.out)
-        self.waveform = QGraphicsPathItem(self)
-        self.waveform.setZValue(2)
-        self.update_waveform()
-        self.status = QGraphicsTextItem("0", self)
-        self.status.setDefaultTextColor(QColor(200, 200, 200))
-        self.status.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        self.status.setPos(35, 25)
-        self.status.setZValue(3)
-        self.freq_label = QGraphicsTextItem(f"{self.frequency}Hz", self)
+
+        # Кнопка включения/выключения
+        self.button_rect = QGraphicsRectItem(5, 12, 70, 25, self)
+        self.button_rect.setBrush(QBrush(QColor(80, 80, 100)))
+        self.button_rect.setPen(QPen(QColor(120, 120, 140), 1.5))
+        self.button_rect.setAcceptHoverEvents(True)
+        self.button_rect.setZValue(2)
+        self.button_text = QGraphicsTextItem("START", self)
+        self.button_text.setDefaultTextColor(QColor(200, 200, 200))
+        self.button_text.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+        self.button_text.setPos(18, 18)
+        self.button_text.setZValue(3)
+
+        # Статус генератора
+        self.status_indicator = QGraphicsEllipseItem(5, 45, 10, 10, self)
+        self.status_indicator.setBrush(QBrush(QColor(80, 80, 100)))
+        self.status_indicator.setPen(QPen(QColor(120, 120, 140), 1))
+        self.status_indicator.setZValue(2)
+
+        self.status_text = QGraphicsTextItem("STOP", self)
+        self.status_text.setDefaultTextColor(QColor(200, 200, 200))
+        self.status_text.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+        self.status_text.setPos(18, 45)
+        self.status_text.setZValue(3)
+
+        self.value_text = QGraphicsTextItem("0", self)
+        self.value_text.setDefaultTextColor(QColor(150, 150, 150))
+        self.value_text.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        self.value_text.setPos(55, 42)
+        self.value_text.setZValue(3)
+
+        self.freq_label = QGraphicsTextItem(f"{self.interval_ms}ms", self)
         self.freq_label.setDefaultTextColor(QColor(150, 150, 150))
         self.freq_label.setFont(QFont("Arial", 7))
-        self.freq_label.setPos(30, 52)
+        self.freq_label.setPos(30, 72)
         self.freq_label.setZValue(2)
 
-    def update_waveform(self):
-        path = QPainterPath()
-        path.moveTo(15, 45)
-        if self.state:
-            path.lineTo(30, 45)
-            path.lineTo(30, 30)
-            path.lineTo(45, 30)
-            path.lineTo(45, 45)
-            path.lineTo(60, 45)
+    def mousePressEvent(self, event):
+        local_pos = self.mapFromScene(event.scenePos())
+        if self.button_rect.contains(local_pos):
+            self.toggle_enabled()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def toggle_enabled(self):
+        self.enabled = not self.enabled
+        if self.enabled:
+            self.timer.start(self.interval_ms)
+            self.button_text.setPlainText("STOP")
+            self.button_rect.setBrush(QBrush(QColor(100, 200, 100)))
+            self.status_text.setPlainText("RUN")
+            self.status_indicator.setBrush(QBrush(QColor(100, 255, 100)))
         else:
-            path.lineTo(60, 45)
-        self.waveform.setPath(path)
-        self.waveform.setPen(QPen(QColor(100, 200, 100), 2))
-        self.waveform.setBrush(Qt.BrushStyle.NoBrush)
+            self.timer.stop()
+            self.state = False
+            self.out.set_state(False)
+            self.value_text.setPlainText("0")
+            self.button_text.setPlainText("START")
+            self.button_rect.setBrush(QBrush(QColor(80, 80, 100)))
+            self.status_text.setPlainText("STOP")
+            self.status_indicator.setBrush(QBrush(QColor(80, 80, 100)))
+        self.update_gradient()
 
-    def set_frequency(self, freq):
-        self.frequency = max(1, min(100, freq))
-        self.freq_label.setPlainText(f"{self.frequency}Hz")
-
-    def update_clock(self):
-        self.counter += 1
-        if self.counter >= 50 // self.frequency:
-            self.counter = 0
+    def toggle_clock(self):
+        if self.enabled:
             self.state = not self.state
             self.out.set_state(self.state)
-            self.status.setPlainText("1" if self.state else "0")
-            self.update_waveform()
+            self.value_text.setPlainText("1" if self.state else "0")
             self.node_color = QColor(130, 100, 80) if self.state else QColor(100, 80, 60)
             self.update_gradient()
-            for wire in self.out.wires:
-                if wire.scene() is not None:
-                    wire.propagate()
 
     def evaluate(self):
         pass
+
+    def set_interval_ms(self, interval_ms):
+        """Установка интервала в миллисекундах (от 5 до 1000 мс)"""
+        self.interval_ms = max(5, min(1000, interval_ms))
+        self.freq_label.setPlainText(f"{self.interval_ms}ms")
+        # Если генератор запущен, перезапускаем таймер с новым интервалом
+        if self.enabled:
+            self.timer.stop()
+            self.timer.start(self.interval_ms)
 
     def show_properties(self):
         dialog = QDialog()
@@ -370,36 +409,44 @@ class ClockSource(ShapeNode):
         dialog.setStyleSheet("""
             QDialog { background-color: #2a2a2e; color: white; }
             QLabel { color: white; }
-            QSpinBox, QDoubleSpinBox { background-color: #3a3a40; color: white; border: 1px solid #4a4a50; padding: 3px; }
+            QLineEdit, QSpinBox, QDoubleSpinBox { background-color: #3a3a40; color: white; border: 1px solid #4a4a50; padding: 3px; }
             QDialogButtonBox QPushButton { background-color: #3a3a40; color: white; border: none; padding: 5px 15px; border-radius: 3px; }
             QDialogButtonBox QPushButton:hover { background-color: #4a9eff; }
         """)
         layout = QVBoxLayout(dialog)
         form = QFormLayout()
+
         name_edit = QLineEdit(self.type)
         form.addRow("Название:", name_edit)
-        freq_spin = QSpinBox()
-        freq_spin.setRange(1, 100)
-        freq_spin.setValue(self.frequency)
-        freq_spin.setSuffix(" Гц")
-        form.addRow("Частота:", freq_spin)
+
+        # Настройка интервала в миллисекундах (5-1000 мс)
+        interval_spin = QSpinBox()
+        interval_spin.setRange(5, 1000)
+        interval_spin.setSingleStep(5)
+        interval_spin.setValue(self.interval_ms)
+        interval_spin.setSuffix(" мс")
+        form.addRow("Время тика (мс):", interval_spin)
+
         x_spin = QDoubleSpinBox()
         x_spin.setRange(0, 3000)
         x_spin.setValue(self.x())
         form.addRow("X:", x_spin)
+
         y_spin = QDoubleSpinBox()
         y_spin.setRange(0, 2000)
         y_spin.setValue(self.y())
         form.addRow("Y:", y_spin)
+
         layout.addLayout(form)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.type = name_edit.text()
             self.title_text.setPlainText(self.type)
-            self.set_frequency(freq_spin.value())
+            self.set_interval_ms(interval_spin.value())
             self.setPos(x_spin.value(), y_spin.value())
             self.title_text.setPos(self.width / 2 - self.title_text.boundingRect().width() / 2, self.height - 18)
 
@@ -608,7 +655,7 @@ class LedOutput(ShapeNode):
         self.led.setZValue(2)
         self.reflection = QGraphicsEllipseItem(18, 16, 10, 10, self)
         self.reflection.setBrush(QBrush(QColor(255, 255, 255, 50)))
-        self.reflection.setPen(Qt.PenStyle.NoPen)
+        self.reflection.setPen(QPen(Qt.PenStyle.NoPen))  # Исправлено: QPen() оборачивает NoPen
         self.reflection.setZValue(3)
         self.value_text = QGraphicsTextItem("0", self)
         self.value_text.setDefaultTextColor(QColor(150, 150, 150))
@@ -809,9 +856,6 @@ class LogicScene(QGraphicsScene):
         self.undo_stack = []
         self.redo_stack = []
         self.max_history = 50
-        self.clock_timer = QTimer()
-        self.clock_timer.timeout.connect(self.update_clocks)
-        self.clock_timer.start(20)
         self.eval_timer = QTimer()
         self.eval_timer.timeout.connect(self.evaluate_all)
         self.eval_timer.start(50)
@@ -833,22 +877,39 @@ class LogicScene(QGraphicsScene):
                 line = self.addLine(0, y, 3000, y, pen_bold)
                 line.setZValue(-10)
 
+    def draw_grid(self):
+        # Мы не создаем линии как объекты, а переопределяем отрисовку фона
+        self.update()
+
+    def drawBackground(self, painter, rect):
+        super().drawBackground(painter, rect)
+        if not self.show_grid:
+            return
+
+        painter.setPen(QPen(QColor(45, 45, 50), 0.5))
+        left = int(rect.left()) - (int(rect.left()) % 50)
+        top = int(rect.top()) - (int(rect.top()) % 50)
+
+        lines = []
+        for x in range(left, int(rect.right()), 50):
+            lines.append(QLineF(x, rect.top(), x, rect.bottom()))
+        for y in range(top, int(rect.bottom()), 50):
+            lines.append(QLineF(rect.left(), y, rect.right(), y))
+
+        painter.drawLines(lines)
+
+        # Жирные линии каждые 250 пикселей
+        painter.setPen(QPen(QColor(55, 55, 65), 0.8))
+        bold_lines = []
+        for x in range(left - (left % 250), int(rect.right()), 250):
+            bold_lines.append(QLineF(x, rect.top(), x, rect.bottom()))
+        for y in range(top - (top % 250), int(rect.bottom()), 250):
+            bold_lines.append(QLineF(rect.left(), y, rect.right(), y))
+        painter.drawLines(bold_lines)
+
     def toggle_grid(self, show):
         self.show_grid = show
-        items_to_keep = []
-        for item in self.items():
-            if isinstance(item, (ShapeNode, Wire, Port)):
-                items_to_keep.append(item)
-            elif isinstance(item, QGraphicsLineItem) and item.zValue() > -10:
-                items_to_keep.append(item)
-        self.clear()
-        self.draw_grid()
-        for item in items_to_keep:
-            if item.scene() is None:
-                try:
-                    self.addItem(item)
-                except:
-                    pass
+        self.update()
 
     def start_wire(self, port):
         if self.temp_wire:
@@ -877,27 +938,31 @@ class LogicScene(QGraphicsScene):
 
     def remove_node(self, node):
         try:
-            for port in node.ports:
-                wires_to_remove = port.wires[:]
-                for wire in wires_to_remove:
-                    wire.remove()
-            if node.scene() is not None:
-                self.removeItem(node)
             self.save_state()
+            for port in node.ports:
+                for wire in list(port.wires):
+                    wire.remove()
+            if node.scene():
+                self.removeItem(node)
             self.update()
         except Exception as e:
             print(f"Ошибка при удалении узла: {e}")
-
-    def update_clocks(self):
-        for item in self.items():
-            if isinstance(item, ClockSource) and item.scene() is not None:
-                item.update_clock()
 
     def evaluate_all(self):
         nodes = []
         for item in self.items():
             if isinstance(item, ShapeNode) and hasattr(item, 'evaluate') and item.scene() is not None:
                 nodes.append(item)
+        for item in self.items():
+            if isinstance(item, Port) and not item.is_output:
+                if not item.wires:
+                    item.set_state(False)
+
+            if isinstance(item, Wire) and item.scene() is not None and item.in_port:
+                try:
+                    item.propagate()
+                except:
+                    pass
         for _ in range(20):
             changed = False
             for node in nodes:
@@ -1081,21 +1146,7 @@ class ToolPanel(QFrame):
                 layout.addWidget(btn)
         layout.addStretch()
         layout.addWidget(self.make_sep())
-        view_group = QGroupBox("Вид")
-        view_layout = QVBoxLayout(view_group)
-        self.grid_check = QCheckBox("Показать сетку")
-        self.grid_check.setChecked(True)
-        self.grid_check.stateChanged.connect(self.toggle_grid)
-        view_layout.addWidget(self.grid_check)
-        self.snap_check = QCheckBox("Привязка к сетке")
-        self.snap_check.stateChanged.connect(self.toggle_snap)
-        view_layout.addWidget(self.snap_check)
-        self.shadow_check = QCheckBox("Тень элементов")
-        self.shadow_check.setChecked(True)
-        self.shadow_check.stateChanged.connect(self.toggle_shadow)
-        view_layout.addWidget(self.shadow_check)
-        layout.addWidget(view_group)
-        layout.addWidget(self.make_sep())
+
         file_group = QGroupBox("Файл")
         file_layout = QVBoxLayout(file_group)
         for name, action in [("💾 Сохранить", "save"), ("📂 Загрузить", "load"), ("📸 Экспорт PNG", "export")]:
@@ -1190,7 +1241,11 @@ class MainWindow(QMainWindow):
         self.scene = LogicScene()
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Добавь это в __init__ после создания self.view
         self.view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.view.setInteractive(True)
+        self.view.setViewportUpdateMode(
+            QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.create_menu()
@@ -1354,7 +1409,7 @@ class MainWindow(QMainWindow):
 
     def show_about(self):
         QMessageBox.about(self, "О программе",
-            "Logic Circuit Designer - Professional Edition\n\nВерсия 2.2\n\nПрограмма для создания и симуляции логических схем.\n\nОсновные возможности:\n• Логические элементы (AND, OR, NOT, NAND, NOR, XOR, BUFFER)\n• Входные устройства (Переключатель, Тактовый генератор)\n• Выходные устройства (Светодиод, 7-сегментный индикатор)\n• Триггеры (RS, D, JK, T -триггеры)\n• Undo/Redo (Ctrl+Z/Ctrl+Y)\n• Сохранение/загрузка схем в JSON\n• Экспорт в PNG\n• Двойной клик для редактирования свойств\n\n© 2024 Logic Designer Team")
+            "Симулятор Логических Схем - Professional Edition\n\nВерсия 1.0\n\nПрограмма для создания и симуляции логических схем.\n\nОсновные возможности:\n• Логические элементы (AND, OR, NOT, NAND, NOR, XOR, BUFFER)\n• Входные устройства (Переключатель, Тактовый генератор)\n• Выходные устройства (Светодиод, 7-сегментный индикатор)\n• Триггеры (RS, D, JK, T -триггеры)\n• Undo/Redo (Ctrl+Z/Ctrl+Y)\n• Сохранение/загрузка схем в JSON\n• Экспорт в PNG\n• Двойной клик для редактирования свойств\n\n© 2026 Rapid Racoons Original")
 
 
 if __name__ == "__main__":
