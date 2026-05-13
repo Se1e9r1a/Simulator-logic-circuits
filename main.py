@@ -6,16 +6,16 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGraphicsView, QGraphicsScene,
     QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsLineItem, QPushButton,
     QVBoxLayout, QHBoxLayout, QFileDialog, QScrollArea, QFrame, QLabel,
-    QMenu, QGraphicsTextItem, QGraphicsItem, QGraphicsPathItem, QMessageBox,
-    QMenuBar, QToolBar, QStatusBar, QSlider, QCheckBox, QComboBox,
-    QGroupBox, QRadioButton, QButtonGroup, QColorDialog, QGraphicsDropShadowEffect,
+    QGraphicsTextItem, QGraphicsItem, QGraphicsPathItem, QMessageBox,
+    QToolBar, QStatusBar,
+    QGroupBox, QGraphicsDropShadowEffect,
     QDialog, QDialogButtonBox, QFormLayout, QSpinBox, QDoubleSpinBox, QLineEdit
 )
 from PyQt6.QtGui import (
     QPen, QBrush, QColor, QFont, QPainter, QLinearGradient, QAction,
-    QPainterPath, QImage, QPixmap, QKeySequence, QShortcut, QTransform
+    QPainterPath, QImage, QKeySequence, QShortcut
 )
-from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer, QSettings, QLineF, QPoint
+from PyQt6.QtCore import Qt, QTimer, QLineF
 
 
 def exception_hook(exctype, value, tb):
